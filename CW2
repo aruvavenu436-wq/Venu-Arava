@@ -1,0 +1,220 @@
+#include <Arduino_HS300x.h>  // Library for HS3003 temp/humidity sensor
+
+void setup() {
+  Serial.begin(115200);
+  while (!Serial);  // Wait for Serial Monitor (Nano 33 BLE behavior)
+
+  Serial.println("HS3003 Temperature & Humidity Test");
+
+  // Initialize the HS3003 sensor
+  if (!HS300x.begin()) {
+    Serial.println("Failed to initialize HS3003 sensor!");
+    while (1) {
+      // Stay here if sensor is not found
+      delay(1000);
+    }
+  }
+
+  Serial.println("HS3003 sensor initialized successfully.");
+}
+
+void loop() {
+  // Read temperature in Celsius
+  float temperature = HS300x.readTemperature();
+
+  // Read relative humidity in %
+  float humidity = HS300x.readHumidity();
+
+  // Print results
+  Serial.print("Temperature: ");
+  Serial.print(temperature, 2);
+  Serial.print(" °C");
+
+  Serial.print("   |   Humidity: ");
+  Serial.print(humidity, 2);
+  Serial.println(" %RH");
+
+  delay(1000);  // 1 reading per second
+}
+
+
+const int GAS_PIN = A1;   // LM358 output → A1
+
+void setup() {
+  Serial.begin(115200);
+  while (!Serial);
+
+  Serial.println("=== MQ-2 + RC Filter + Op-Amp Test Started ===");
+}
+
+void loop() {
+
+  // Read the filtered & amplified value (0–1023)
+  int raw = analogRead(GAS_PIN);
+
+  // Convert ADC to voltage (3.3V reference)
+  float voltage = raw * (3.3 / 1023.0);
+
+  // Convert to percentage of max voltage
+  float gasLevel = (voltage / 3.3) * 100.0;
+
+  Serial.print("Raw ADC: ");
+  Serial.print(raw);
+  Serial.print(" | Voltage: ");
+  Serial.print(voltage, 3);
+  Serial.print(" V");
+  Serial.print(" | Gas Level (scaled): ");
+  Serial.print(gasLevel, 1);
+  Serial.println(" %");
+
+  delay(500);
+}
+
+
+
+const int LDR_PIN = A0;  // Photoresistor divider output
+
+void setup() {
+  Serial.begin(115200);
+  while (!Serial);  // Wait for Serial Monitor to open
+
+  Serial.println("LDR Sensor Reading Started...");
+}
+
+void loop() {
+
+  // Read raw ADC (0–1023 on Nano 33 BLE Sense)
+  int rawValue = analogRead(LDR_PIN);
+
+  // Convert raw ADC to voltage (3.3V reference)
+  float voltage = rawValue * (3.3 / 1023.0);
+
+  // Convert voltage to brightness percentage
+  float brightness = (voltage / 3.3) * 100.0;
+
+  // Print results
+  Serial.print("Raw ADC = ");
+  Serial.print(rawValue);
+  
+  Serial.print("   |   Voltage = ");
+  Serial.print(voltage, 3);
+  Serial.print(" V");
+
+  Serial.print("   |   Brightness = ");
+  Serial.print(brightness, 1);
+  Serial.println(" %");
+
+  delay(300); // Adjust speed as needed
+}
+
+
+#include <Wire.h>
+#include <LiquidCrystal_I2C.h>
+
+// Change address 0x27 to 0x3F if your LCD uses that address
+LiquidCrystal_I2C lcd(0x27, 16, 2);
+
+String incomingData = "";
+
+// Helper to split CSV fields
+String getValue(String data, char separator, int index) {
+  int found = 0;
+  int start = 0;
+
+  for (int i = 0; i < data.length(); i++) {
+    if (data.charAt(i) == separator || i == data.length() - 1) {
+      if (found == index) {
+        int end = (i == data.length() - 1) ? i + 1 : i;
+        return data.substring(start, end);
+      }
+      found++;
+      start = i + 1;
+    }
+  }
+  return "";
+}
+
+void setup() {
+  // USB serial for debugging
+  Serial.begin(115200);
+  while (!Serial);
+
+  // UART from Nano (Sensor Node)
+  // On MKR1010, Serial1 uses:
+  // RX1 = pin 13, TX1 = pin 14
+  Serial1.begin(9600);
+
+  // Init LCD
+  lcd.init();
+  lcd.backlight();
+
+  lcd.setCursor(0, 0);
+  lcd.print("Receiver Node");
+  lcd.setCursor(0, 1);
+  lcd.print("Waiting data...");
+  delay(1500);
+  lcd.clear();
+
+  Serial.println("=== MKR1010 Receiver Ready ===");
+}
+
+void loop() {
+  // Read characters from Serial1 until newline
+  while (Serial1.available()) {
+    char c = Serial1.read();
+
+    if (c == '\n') {
+      if (incomingData.length() > 0) {
+        processData(incomingData);
+      }
+      incomingData = "";
+    } else if (c != '\r') {
+      incomingData += c;
+    }
+  }
+}
+
+void processData(String data) {
+  Serial.print("Raw received: ");
+  Serial.println(data);
+
+  // Parse CSV: brightness, gasLevel, temperature, humidity
+  float brightness  = getValue(data, ',', 0).toFloat();
+  float gasLevel    = getValue(data, ',', 1).toFloat();
+  float temperature = getValue(data, ',', 2).toFloat();
+  float humidity    = getValue(data, ',', 3).toFloat();
+
+  // Debug to Serial
+  Serial.print("Brightness: ");
+  Serial.print(brightness, 1);
+  Serial.print("%  |  Gas: ");
+  Serial.print(gasLevel, 1);
+  Serial.print("%  |  Temp: ");
+  Serial.print(temperature, 2);
+  Serial.print("C  |  Hum: ");
+  Serial.print(humidity, 1);
+  Serial.println("%RH");
+
+  // === Update LCD ===
+  lcd.clear();
+
+  // Line 1: Light & Gas
+  lcd.setCursor(0, 0);
+  lcd.print("L:");
+  lcd.print(brightness, 0);
+  lcd.print("% ");
+
+  lcd.print("G:");
+  lcd.print(gasLevel, 0);
+  lcd.print("%");
+
+  // Line 2: Temp & Humidity
+  lcd.setCursor(0, 1);
+  lcd.print("T:");
+  lcd.print(temperature, 1);
+  lcd.print("C ");
+
+  lcd.print("H:");
+  lcd.print(humidity, 0);
+  lcd.print("%");
+}
